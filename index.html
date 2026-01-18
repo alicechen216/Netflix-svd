@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SVD Recommendation System - Netflix Style</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/numeric/1.2.6/numeric.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #E50914 0%, #221f1f 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+        }
+
+        h1 {
+            color: #E50914;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+
+        .netflix-logo {
+            text-align: center;
+            font-size: 3em;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+
+        .control-panel {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin: 15px 0;
+        }
+
+        button {
+            padding: 10px 20px;
+            background: #E50914;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+
+        button:hover {
+            background: #b20710;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(229, 9, 20, 0.4);
+        }
+
+        button.secondary {
+            background: #564d4d;
+        }
+
+        button.secondary:hover {
+            background: #221f1f;
+        }
+
+        .rating-matrix {
+            overflow-x: auto;
+            margin: 20px 0;
+        }
+
+        .rating-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        .rating-table th {
+            background: #E50914;
+            color: white;
+            padding: 12px;
+            text-align: center;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .rating-table td {
+            padding: 8px;
+            text-align: center;
+            border: 1px solid #ddd;
+        }
+
+        .rating-table tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+
+        .rating-table tr:hover {
+            background: #fff3cd;
+        }
+
+        .rating-table td:first-child {
+            font-weight: bold;
+            background: #564d4d;
+            color: white;
+            position: sticky;
+            left: 0;
+            z-index: 5;
+        }
+
+        .rating-input {
+            width: 60px;
+            padding: 5px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        .rating-input:focus {
+            border-color: #E50914;
+            outline: none;
+        }
+
+        .unrated {
+            background: #e9ecef;
+            color: #999;
+        }
+
+        .results-section {
+            margin-top: 30px;
+        }
+
+        .result-box {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border-left: 4px solid #E50914;
+        }
+
+        .result-box h3 {
+            color: #E50914;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+
+        .recommendation-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .movie-card {
+            background: white;
+            border-radius: 10px;
+            padding: 15px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            transition: transform 0.3s;
+        }
+
+        .movie-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+        }
+
+        .movie-title {
+            font-weight: bold;
+            color: #221f1f;
+            margin-bottom: 8px;
+            font-size: 1.1em;
+        }
+
+        .predicted-rating {
+            color: #E50914;
+            font-size: 1.4em;
+            font-weight: bold;
+        }
+
+        .stars {
+            color: #ffc107;
+            font-size: 1.2em;
+        }
+
+        .info-box {
+            background: #d1ecf1;
+            color: #0c5460;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            border-left: 4px solid #17a2b8;
+        }
+
+        .warning-box {
+            background: #fff3cd;
+            color: #856404;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            border-left: 4px solid #ffc107;
+        }
+
+        .success-box {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            border-left: 4px solid #28a745;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .metric-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .metric-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #E50914;
+        }
+
+        .metric-label {
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .user-selector {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin: 15px 0;
+        }
+
+        select {
+            padding: 8px 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            min-width: 150px;
+        }
+
+        .similarity-list {
+            background: white;
+            padding: 15px;
+            border-radius: 5px;
+        }
+
+        .similarity-item {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .similarity-item:last-child {
+            border-bottom: none;
+        }
+
+        .similarity-bar {
+            width: 200px;
+            height: 20px;
+            background: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .similarity-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #E50914, #ff4444);
+            transition: width 0.3s;
+        }
+
+        .chart-container {
+            margin: 20px 0;
+        }
+
+        label {
+            font-weight: bold;
+            color: #333;
+        }
+
+        .dataset-options {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="netflix-logo">🎬</div>
+        <h1>SVD Recommendation System</h1>
+        <p class="subtitle">Netflix-Style Movie Recommendations using Singular Value Decomposition</p>
+
+        <div class="control-panel">
+            <h3>📊 Dataset Configuration</h3>
+            
+            <div class="info-box">
+                <strong>How it works:</strong> Enter ratings (1-5 stars) for different users and movies. 
+                Use 0 for unrated movies. SVD will find patterns and predict missing ratings!
+            </div>
+
+            <div class="dataset-options">
+                <button onclick="loadSmallDataset()">📱 Small Dataset (5×6)</button>
+                <button onclick="loadMediumDataset()">💻 Medium Dataset (8×10)</button>
+                <button onclick="loadNetflixExample()">🎬 Netflix Example</button>
+                <button onclick="loadSparseDataset()">⭐ Sparse Dataset</button>
+                <button class="secondary" onclick="generateRandomDataset()">🎲 Random Dataset</button>
+            </div>
+
+            <div class="btn-group">
+                <button onclick="calculateRecommendations()">🚀 Calculate SVD & Recommendations</button>
+                <button class="secondary" onclick="resetMatrix()">🔄 Reset</button>
+            </div>
+        </div>
+
+        <div class="result-box">
+            <h3>⭐ User-Movie Rating Matrix</h3>
+            <p style="color: #666; margin-bottom: 10px;">
+                <strong>Instructions:</strong> Enter ratings 1-5 (or 0 for unrated). Click calculate to see recommendations!
+            </p>
+            <div class="rating-matrix" id="ratingMatrixContainer"></div>
+        </div>
+
+        <div id="resultsSection" style="display: none;">
+            
+            <div class="result-box">
+                <h3>📈 SVD Analysis Results</h3>
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-value" id="numUsers">0</div>
+                        <div class="metric-label">Users</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="numMovies">0</div>
+                        <div class="metric-label">Movies</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="effectiveRank">0</div>
+                        <div class="metric-label">Effective Rank</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="sparsity">0%</div>
+                        <div class="metric-label">Sparsity</div>
+                    </div>
+                </div>
+
+                <div class="chart-container">
+                    <div id="singularValuesChart"></div>
+                </div>
+
+                <div class="warning-box">
+                    <strong>💡 Understanding the Results:</strong><br>
+                    • <strong>Effective Rank:</strong> Number of "latent factors" (hidden patterns) needed to represent preferences<br>
+                    • <strong>Sparsity:</strong> Percentage of unrated movies (higher = more predictions possible)<br>
+                    • <strong>Singular Values:</strong> Show the importance of each latent factor
+                </div>
+            </div>
+
+            <div class="result-box">
+                <h3>🎯 Personalized Recommendations</h3>
+                <div class="user-selector">
+                    <label>Select User:</label>
+                    <select id="userSelect" onchange="updateRecommendations()"></select>
+                    <label>Rank (Latent Factors):</label>
+                    <select id="rankSelect" onchange="updateRecommendations()">
+                        <option value="1">1 factor</option>
+                        <option value="2" selected>2 factors</option>
+                        <option value="3">3 factors</option>
+                    </select>
+                </div>
+
+                <div class="success-box" id="recommendationInfo"></div>
+
+                <h4>🎬 Top Recommendations (Unrated Movies):</h4>
+                <div class="recommendation-grid" id="recommendationsGrid"></div>
+
+                <h4 style="margin-top: 20px;">📊 All Predicted Ratings:</h4>
+                <div class="rating-matrix" id="predictedMatrixContainer"></div>
+            </div>
+
+            <div class="result-box">
+                <h3>👥 User Similarity Analysis</h3>
+                <div class="info-box">
+                    <strong>How Similar Users Work:</strong> SVD creates a "user space" where similar taste = close distance.
+                    This powers "Users like you also watched..." features!
+                </div>
+                <div class="similarity-list" id="userSimilarityList"></div>
+            </div>
+
+            <div class="result-box">
+                <h3>🎭 Movie Similarity Analysis</h3>
+                <div class="info-box">
+                    <strong>How Similar Movies Work:</strong> Movies with similar rating patterns are clustered together.
+                    This powers "Because you watched X..." recommendations!
+                </div>
+                <div class="similarity-list" id="movieSimilarityList"></div>
+            </div>
+
+            <div class="result-box">
+                <h3>📉 Reconstruction Error Analysis</h3>
+                <div class="chart-container">
+                    <div id="errorChart"></div>
+                </div>
+                <div class="warning-box">
+                    <strong>Interpretation:</strong> Lower rank = more compression but less accuracy. 
+                    Netflix typically uses 10-50 latent factors for millions of users!
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        let ratingMatrix = [];
+        let movies = [];
+        let users = [];
+        let svdResult = null;
+        let originalMatrix = [];
+
+        function loadSmallDataset() {
+            users = ['Alice', 'Bob', 'Carol', 'Dave', 'Eve'];
+            movies = ['Inception', 'Titanic', 'The Matrix', 'Frozen', 'Interstellar', 'Avatar'];
+            
+            ratingMatrix = [
+                [5, 4, 0, 1, 5, 0],
+                [4, 0, 0, 0, 4, 0],
+                [0, 0, 5, 4, 0, 5],
+                [0, 3, 4, 0, 0, 4],
+                [5, 0, 0, 2, 5, 0]
+            ];
+            
+            renderRatingMatrix();
+        }
+
+        function loadMediumDataset() {
+            users = ['User1', 'User2', 'User3', 'User4', 'User5', 'User6', 'User7', 'User8'];
+            movies = ['Action1', 'Action2', 'Comedy1', 'Comedy2', 'Drama1', 'Drama2', 'SciFi1', 'SciFi2', 'Horror1', 'Horror2'];
+            
+            ratingMatrix = [
+                [5, 4, 0, 0, 0, 0, 5, 4, 0, 0],
+                [4, 5, 0, 0, 0, 1, 4, 5, 0, 0],
+                [0, 0, 5, 4, 0, 0, 0, 0, 0, 0],
+                [0, 0, 4, 5, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 5, 4, 0, 0, 3, 0],
+                [0, 0, 0, 0, 4, 5, 0, 0, 0, 4],
+                [5, 0, 0, 0, 0, 0, 4, 5, 0, 0],
+                [0, 0, 5, 0, 0, 0, 0, 0, 5, 4]
+            ];
+            
+            renderRatingMatrix();
+        }
+
+        function loadNetflixExample() {
+            users = ['SciFi Fan', 'Rom-Com Lover', 'Action Hero', 'Drama Queen', 'Horror Buff'];
+            movies = ['Stranger Things', 'The Notebook', 'Die Hard', 'The Crown', 'Get Out', 'Blade Runner', 'Love Actually', 'Avengers'];
+            
+            ratingMatrix = [
+                [5, 1, 2, 2, 3, 5, 0, 3],
+                [1, 5, 1, 4, 1, 0, 5, 1],
+                [2, 1, 5, 1, 2, 3, 0, 5],
+                [2, 4, 1, 5, 2, 1, 4, 0],
+                [4, 1, 3, 2, 5, 3, 0, 2]
+            ];
+            
+            renderRatingMatrix();
+        }
+
+        function loadSparseDataset() {
+            users = ['User_A', 'User_B', 'User_C', 'User_D', 'User_E', 'User_F'];
+            movies = ['Movie1', 'Movie2', 'Movie3', 'Movie4', 'Movie5', 'Movie6', 'Movie7', 'Movie8'];
+            
+            ratingMatrix = [
+                [5, 0, 0, 0, 4, 0, 0, 0],
+                [0, 0, 4, 0, 0, 0, 5, 0],
+                [0, 5, 0, 0, 0, 4, 0, 0],
+                [4, 0, 0, 5, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 5, 0, 4],
+                [0, 4, 0, 0, 5, 0, 0, 0]
+            ];
+            
+            renderRatingMatrix();
+        }
+
+        function generateRandomDataset() {
+            const numUsers = 6;
+            const numMovies = 8;
+            users = Array.from({length: numUsers}, (_, i) => `User${i+1}`);
+            movies = Array.from({length: numMovies}, (_, i) => `Movie${i+1}`);
+            
+            ratingMatrix = Array(numUsers).fill(0).map(() => 
+                Array(numMovies).fill(0).map(() => 
+                    Math.random() > 0.6 ? Math.floor(Math.random() * 5) + 1 : 0
+                )
+            );
+            
+            renderRatingMatrix();
+        }
+
+        function renderRatingMatrix() {
+            let html = '<table class="rating-table"><thead><tr><th>User / Movie</th>';
+            movies.forEach(movie => {
+                html += `<th>${movie}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+
+            ratingMatrix.forEach((row, i) => {
+                html += `<tr><td>${users[i]}</td>`;
+                row.forEach((rating, j) => {
+                    const displayValue = rating === 0 ? '' : rating;
+                    const className = rating === 0 ? 'unrated' : '';
+                    html += `<td class="${className}">
+                        <input type="number" class="rating-input" 
+                               min="0" max="5" value="${rating}"
+                               onchange="updateRating(${i}, ${j}, this.value)">
+                    </td>`;
+                });
+                html += '</tr>';
+            });
+
+            html += '</tbody></table>';
+            document.getElementById('ratingMatrixContainer').innerHTML = html;
+        }
+
+        function updateRating(userIdx, movieIdx, value) {
+            ratingMatrix[userIdx][movieIdx] = parseFloat(value) || 0;
+        }
+
+        function resetMatrix() {
+            loadSmallDataset();
+        }
+
+        function calculateRecommendations() {
+            try {
+                // Store original matrix
+                originalMatrix = ratingMatrix.map(row => [...row]);
+
+                // Replace zeros with average rating for SVD
+                const flatRatings = ratingMatrix.flat().filter(r => r > 0);
+                const avgRating = flatRatings.reduce((a, b) => a + b, 0) / flatRatings.length;
+
+                const matrixForSVD = ratingMatrix.map(row => 
+                    row.map(val => val === 0 ? avgRating : val)
+                );
+
+                // Perform SVD
+                svdResult = numeric.svd(matrixForSVD);
+
+                // Calculate metrics
+                const numUsers = users.length;
+                const numMovies = movies.length;
+                const totalRatings = ratingMatrix.flat().filter(r => r > 0).length;
+                const sparsity = ((numUsers * numMovies - totalRatings) / (numUsers * numMovies) * 100).toFixed(1);
+                
+                const tolerance = 0.1;
+                const effectiveRank = svdResult.S.filter(s => s > tolerance).length;
+
+                // Update metrics
+                document.getElementById('numUsers').textContent = numUsers;
+                document.getElementById('numMovies').textContent = numMovies;
+                document.getElementById('effectiveRank').textContent = effectiveRank;
+                document.getElementById('sparsity').textContent = sparsity + '%';
+
+                // Plot singular values
+                plotSingularValues(svdResult.S);
+
+                // Plot error analysis
+                plotErrorAnalysis(svdResult.S);
+
+                // Populate user selector
+                const userSelect = document.getElementById('userSelect');
+                userSelect.innerHTML = users.map((user, i) => 
+                    `<option value="${i}">${user}</option>`
+                ).join('');
+
+                // Update rank selector max value
+                const rankSelect = document.getElementById('rankSelect');
+                rankSelect.innerHTML = '';
+                for (let i = 1; i <= Math.min(effectiveRank, 5); i++) {
+                    rankSelect.innerHTML += `<option value="${i}" ${i === 2 ? 'selected' : ''}>
+                        ${i} factor${i > 1 ? 's' : ''}
+                    </option>`;
+                }
+
+                // Show results
+                document.getElementById('resultsSection').style.display = 'block';
+
+                // Update recommendations
+                updateRecommendations();
+
+            } catch (error) {
+                alert('Error calculating SVD: ' + error.message);
+                console.error(error);
+            }
+        }
+
+        function updateRecommendations() {
+            const userIdx = parseInt(document.getElementById('userSelect').value);
+            const rank = parseInt(document.getElementById('rankSelect').value);
+
+            // Reconstruct matrix with given rank
+            const predictedMatrix = reconstructMatrix(rank);
+
+            // Display recommendations for selected user
+            displayRecommendations(userIdx, predictedMatrix);
+
+            // Display full predicted matrix
+            displayPredictedMatrix(predictedMatrix);
+
+            // Calculate and display similarities
+            calculateUserSimilarity(userIdx, rank);
+            calculateMovieSimilarity(rank);
+        }
+
+        function reconstructMatrix(k) {
+            const U = svdResult.U;
+            const S = svdResult.S;
+            const V = svdResult.V;
+
+            const m = U.length;
+            const n = V.length;
+
+            // Truncate to rank k
+            const Uk = U.map(row => row.slice(0, k));
+            const Sk = S.slice(0, k);
+            const Vk = V.map(row => row.slice(0, k));
+
+            // Reconstruct: R_k = U_k * S_k * V_k^T
+            const result = Array(m).fill(0).map(() => Array(n).fill(0));
+            
+            for (let i = 0; i < m; i++) {
+                for (let j = 0; j < n; j++) {
+                    for (let l = 0; l < k; l++) {
+                        result[i][j] += Uk[i][l] * Sk[l] * Vk[j][l];
+                    }
+                }
+            }
+
+            // Clip to valid range [1, 5]
+            return result.map(row => row.map(val => Math.max(1, Math.min(5, val))));
+        }
+
+        function displayRecommendations(userIdx, predictedMatrix) {
+            const userRatings = originalMatrix[userIdx];
+            const predictions = predictedMatrix[userIdx];
+
+            // Find unrated movies and their predictions
+            const recommendations = [];
+            userRatings.forEach((rating, movieIdx) => {
+                if (rating === 0) {
+                    recommendations.push({
+                        movie: movies[movieIdx],
+                        predictedRating: predictions[movieIdx],
+                        movieIdx: movieIdx
+                    });
+                }
+            });
+
+            // Sort by predicted rating
+            recommendations.sort((a, b) => b.predictedRating - a.predictedRating);
+
+            // Display info
+            document.getElementById('recommendationInfo').innerHTML = `
+                <strong>Showing recommendations for ${users[userIdx]}</strong><br>
+                Found ${recommendations.length} unrated movies. Here are the top predictions:
+            `;
+
+            // Display top recommendations
+            const topRecs = recommendations.slice(0, 6);
+            let html = '';
+            topRecs.forEach(rec => {
+                const stars = '★'.repeat(Math.round(rec.predictedRating));
+                html += `
+                    <div class="movie-card">
+                        <div class="movie-title">${rec.movie}</div>
+                        <div class="predicted-rating">${rec.predictedRating.toFixed(2)}</div>
+                        <div class="stars">${stars}</div>
+                        <div style="color: #666; font-size: 0.9em; margin-top: 5px;">
+                            Predicted rating
+                        </div>
+                    </div>
+                `;
+            });
+
+            document.getElementById('recommendationsGrid').innerHTML = html || 
+                '<p style="color: #666;">No unrated movies found. Try adding more data!</p>';
+        }
+
+        function displayPredictedMatrix(predictedMatrix) {
+            let html = '<table class="rating-table"><thead><tr><th>User / Movie</th>';
+            movies.forEach(movie => {
+                html += `<th>${movie}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+
+            predictedMatrix.forEach((row, i) => {
+                html += `<tr><td>${users[i]}</td>`;
+                row.forEach((rating, j) => {
+                    const isOriginal = originalMatrix[i][j] > 0;
+                    const displayValue = rating.toFixed(2);
+                    const style = isOriginal ? 
+                        'background: #d4edda; font-weight: bold;' : 
+                        'background: #fff3cd;';
+                    html += `<td style="${style}" title="${isOriginal ? 'Original' : 'Predicted'}">${displayValue}</td>`;
+                });
+                html += '</tr>';
+            });
+
+            html += '</tbody></table>';
+            html += '<p style="margin-top: 10px; color: #666;"><strong>Legend:</strong> <span style="background: #d4edda; padding: 3px 8px;">Original ratings</span> <span style="background: #fff3cd; padding: 3px 8px;">Predicted ratings</span></p>';
+            
+            document.getElementById('predictedMatrixContainer').innerHTML = html;
+        }
+
+        function calculateUserSimilarity(userIdx, rank) {
+            const U = svdResult.U.map(row => row.slice(0, rank));
+            const targetUser = U[userIdx];
+
+            const similarities = U.map((userVec, idx) => {
+                if (idx === userIdx) return { user: users[idx], similarity: 1.0 };
+                
+                // Cosine similarity
+                const dotProduct = userVec.reduce((sum, val, i) => sum + val * targetUser[i], 0);
+                const mag1 = Math.sqrt(userVec.reduce((sum, val) => sum + val * val, 0));
+                const mag2 = Math.sqrt(targetUser.reduce((sum, val) => sum + val * val, 0));
+                const similarity = dotProduct / (mag1 * mag2);
+
+                return { user: users[idx], similarity: similarity };
+            });
+
+            similarities.sort((a, b) => b.similarity - a.similarity);
+
+            let html = '<h4>Most Similar Users to ' + users[userIdx] + ':</h4>';
+            similarities.slice(1, 4).forEach(sim => {
+                const percentage = (sim.similarity * 100).toFixed(1);
+                html += `
+                    <div class="similarity-item">
+                        <span><strong>${sim.user}</strong></span>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <div class="similarity-bar">
+                                <div class="similarity-fill" style="width: ${percentage}%"></div>
+                            </div>
+                            <span>${percentage}%</span>
+                        </div>
+                    </div>
+                `;
+            });
+
+            document.getElementById('userSimilarityList').innerHTML = html;
+        }
+
+        function calculateMovieSimilarity(rank) {
+            const V = svdResult.V.map(row => row.slice(0, rank));
+
+            // Calculate similarity matrix
+            const similarities = [];
+            for (let i = 0; i < movies.length; i++) {
+                for (let j = i + 1; j < movies.length; j++) {
+                    const vec1 = V[i];
+                    const vec2 = V[j];
+
+                    const dotProduct = vec1.reduce((sum, val, k) => sum + val * vec2[k], 0);
+                    const mag1 = Math.sqrt(vec1.reduce((sum, val) => sum + val * val, 0));
+                    const mag2 = Math.sqrt(vec2.reduce((sum, val) => sum + val * val, 0));
+                    const similarity = dotProduct / (mag1 * mag2);
+
+                    similarities.push({
+                        movie1: movies[i],
+                        movie2: movies[j],
+                        similarity: similarity
+                    });
+                }
+            }
+
+            similarities.sort((a, b) => b.similarity - a.similarity);
+
+            let html = '<h4>Most Similar Movie Pairs:</h4>';
+            similarities.slice(0, 5).forEach(sim => {
+                const percentage = (sim.similarity * 100).toFixed(1);
+                html += `
+                    <div class="similarity-item">
+                        <span><strong>${sim.movie1}</strong> ↔ <strong>${sim.movie2}</strong></span>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <div class="similarity-bar">
+                                <div class="similarity-fill" style="width: ${percentage}%"></div>
+                            </div>
+                            <span>${percentage}%</span>
+                        </div>
+                    </div>
+                `;
+            });
+
+            document.getElementById('movieSimilarityList').innerHTML = html;
+        }
+
+        function plotSingularValues(singularValues) {
+            const trace = {
+                x: Array.from({length: singularValues.length}, (_, i) => i + 1),
+                y: singularValues,
+                type: 'bar',
+                marker: {
+                    color: '#E50914',
+                    line: {
+                        color: '#b20710',
+                        width: 2
+                    }
+                },
+                name: 'Singular Values'
+            };
+
+            const layout = {
+                title: 'Latent Factors (Singular Values)',
+                xaxis: { title: 'Factor Index', dtick: 1 },
+                yaxis: { title: 'Importance (σᵢ)' },
+                showlegend: false
+            };
+
+            Plotly.newPlot('singularValuesChart', [trace], layout, {responsive: true});
+        }
+
+        function plotErrorAnalysis(singularValues) {
+            const ranks = Array.from({length: singularValues.length}, (_, i) => i + 1);
+            
+            const totalEnergy = Math.sqrt(singularValues.reduce((sum, s) => sum + s*s, 0));
+            
+            const energyRetained = ranks.map(k => {
+                const keptSV = singularValues.slice(0, k);
+                const energy = Math.sqrt(keptSV.reduce((sum, s) => sum + s*s, 0));
+                return (energy / totalEnergy * 100);
+            });
+
+            const errors = ranks.map(k => {
+                const remainingSV = singularValues.slice(k);
+                const error = Math.sqrt(remainingSV.reduce((sum, s) => sum + s*s, 0));
+                return (error / totalEnergy * 100);
+            });
+
+            const trace1 = {
+                x: ranks,
+                y: energyRetained,
+                type: 'scatter',
+                mode: 'lines+markers',
+                name: 'Energy Retained',
+                line: { color: '#28a745', width: 3 },
+                marker: { size: 8 }
+            };
+
+            const trace2 = {
+                x: ranks,
+                y: errors,
+                type: 'scatter',
+                mode: 'lines+markers',
+                name: 'Relative Error',
+                line: { color: '#E50914', width: 3 },
+                marker: { size: 8 },
+                yaxis: 'y2'
+            };
+
+            const layout = {
+                title: 'Model Quality vs Number of Latent Factors',
+                xaxis: { title: 'Number of Factors (Rank)', dtick: 1 },
+                yaxis: { 
+                    title: 'Energy Retained (%)',
+                    titlefont: { color: '#28a745' },
+                    tickfont: { color: '#28a745' }
+                },
+                yaxis2: {
+                    title: 'Relative Error (%)',
+                    titlefont: { color: '#E50914' },
+                    tickfont: { color: '#E50914' },
+                    overlaying: 'y',
+                    side: 'right'
+                },
+                hovermode: 'x unified'
+            };
+
+            Plotly.newPlot('errorChart', [trace1, trace2], layout, {responsive: true});
+        }
+
+        // Initialize with default dataset
+        window.onload = () => {
+            loadSmallDataset();
+        };
+    </script>
+</body>
+</html>
